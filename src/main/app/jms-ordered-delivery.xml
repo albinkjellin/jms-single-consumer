@@ -15,16 +15,17 @@ http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/m
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
 	<jms:activemq-connector name="activemq-retry-single-node"
 		brokerURL="tcp://localhost:61616" validateConnections="true"
-		maxRedelivery="5" numberOfConcurrentTransactedReceivers="1"  doc:name="Active MQ">
+		maxRedelivery="5" numberOfConcurrentTransactedReceivers="1" doc:name="Active MQ">
 		<service-overrides
-			transactedMessageReceiver="org.mule.transport.jms.GuaranteeOrderDeliveryMessageReceiver" messageReceiver="org.mule.transport.jms.GuaranteeOrderDeliveryMessageReceiver"/>
+			transactedMessageReceiver="org.mule.transport.jms.GuaranteeOrderDeliveryMessageReceiver"
+			messageReceiver="org.mule.transport.jms.GuaranteeOrderDeliveryMessageReceiver" />
 	</jms:activemq-connector>
-	
+
 	<jms:activemq-connector name="activemq-retry"
 		brokerURL="tcp://localhost:61616" validateConnections="true"
-		maxRedelivery="5"  doc:name="Active MQ">
+		maxRedelivery="5" doc:name="Active MQ">
 	</jms:activemq-connector>
-	
+
 	<flow name="jms.retry.single.node.in" doc:name="jms.retry.single.node.in">
 		<jms:inbound-endpoint connector-ref="activemq-retry-single-node"
 			doc:name="jms.retry.single.node.in" queue="jms.retry.single.node.in">
@@ -32,6 +33,7 @@ http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/htt
 		</jms:inbound-endpoint>
 		<logger message="++++++++++++ In Process Message ++++++++++++"
 			level="INFO" doc:name="Process" />
+
 		<scripting:component doc:name="Fake Exception">
 			<scripting:script engine="Groovy"><![CDATA[throw new Exception('Fake Exception')]]></scripting:script>
 		</scripting:component>
@@ -40,17 +42,35 @@ http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/htt
 			<logger
 				message="******************* Retry #[message.inboundProperties['JMSXDeliveryCount'] != null ? message.inboundProperties['JMSXDeliveryCount']:1] *******************"
 				level="INFO" doc:name="Retry" />
+			<expression-component doc:name="Expression"><![CDATA[#[flowVars.flowname = flow.name; return payload]]]></expression-component>
+
 			<tracking:custom-event event-name="jms.rety"
 				doc:name="jms.rety">
 				<tracking:meta-data key="jms.rety.count"
 					value="#[message.inboundProperties['JMSXDeliveryCount'] != null ? message.inboundProperties['JMSXDeliveryCount']:1]" />
 			</tracking:custom-event>
+            <choice doc:name="Choice">
+            	<when expression="message.inboundProperties['JMSXDeliveryCount'] != null &amp;&amp; message.inboundProperties['JMSXDeliveryCount'] &gt;4">
+            		<logger message="retries over 5" level="INFO" doc:name="Logger"/>
+            		<logger message="Payload before stop() #[payload]" level="INFO"
+					doc:name="Logger" />
+				<scripting:component doc:name="Groovy">
+					<scripting:script engine="Groovy"><![CDATA[muleContext.registry.lookupFlowConstruct(flowname).stop()]]></scripting:script>
+				</scripting:component>
+				<logger message="Payload after stop() #[payload]" level="INFO"
+					doc:name="Logger" />
+            	</when>
+                <otherwise>
+                    <logger level="INFO" message="Retry again." doc:name="Logger"/>
+                </otherwise>
+            </choice>
 			<on-redelivery-attempts-exceeded
 				doc:name="Redelivery exhausted">
 				<logger message="--------------- Redelivery Exhaused ---------------"
 					level="INFO" doc:name="Redelivery Exhaused" />
 				<tracking:custom-event event-name="jms.retries.exhausted"
 					doc:name="jms.retries.exhausted" />
+				
 			</on-redelivery-attempts-exceeded>
 		</rollback-exception-strategy>
 
@@ -88,14 +108,15 @@ return result]]></scripting:script>
 		</scripting:transformer>
 		<foreach doc:name="For Each">
 			<object-to-string-transformer doc:name="Object to String" />
-            <remove-property propertyName="Content-Type" doc:name="Remove Content-Type"/>
+			<remove-property propertyName="Content-Type"
+				doc:name="Remove Content-Type" />
 			<jms:outbound-endpoint connector-ref="activemq-retry"
 				queue="jms.single.consumer.single.node" doc:name="jms.single.consumer.single.node" />
 		</foreach>
-		<object-to-string-transformer doc:name="Object to String"/>
-		
+		<object-to-string-transformer doc:name="Object to String" />
+
 	</flow>
-	
+
 	<flow name="jms.trigger" doc:name="jms.trigger">
 		<http:inbound-endpoint exchange-pattern="request-response"
 			host="localhost" port="${http.port}" path="trigger" doc:name="/trigger" />
@@ -108,15 +129,17 @@ println result
 return result]]></scripting:script>
 		</scripting:transformer>
 		<foreach doc:name="For Each">
-		
+
 			<object-to-string-transformer doc:name="Object to String" />
-			<remove-property propertyName="Content-Type" doc:name="Remove Content-Type"/>
+			<remove-property propertyName="Content-Type"
+				doc:name="Remove Content-Type" />
 			<jms:outbound-endpoint connector-ref="activemq-retry"
 				queue="jms.consumer" doc:name="jms.consumer" />
 		</foreach>
-		<object-to-string-transformer doc:name="Object to String"/>
-		
+		<object-to-string-transformer doc:name="Object to String" />
+
 	</flow>
-	
-	
+
+
+
 </mule>

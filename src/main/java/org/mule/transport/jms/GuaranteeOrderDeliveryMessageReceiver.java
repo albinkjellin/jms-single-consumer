@@ -16,7 +16,6 @@ public class GuaranteeOrderDeliveryMessageReceiver extends
 	}
 	@Override
 	public boolean shouldConsumeInEveryNode() {
-		System.out.println("************************** shouldConsumeInEveryNode? ************************** ");
 		return false;
 	}
 
